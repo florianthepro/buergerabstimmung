@@ -1,0 +1,3 @@
+Deutsch: „…Details entnehmen Sie der Datenschutzerklärung. Testbetrieb: Die Anmeldung erzeugt zurzeit eine zufällige Kennung, es wird noch kein Ausweis gelesen. Angelegte Themen und Stimmen werden beim Wechsel in den Echtbetrieb gelöscht.”
+
+Englisch: „…See the privacy policy for details. Test operation: sign-in currently generates a random identifier, no ID card is read yet. Topics and votes created now will be deleted when switching to live operation.”
