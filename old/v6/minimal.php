@@ -23,7 +23,7 @@ const SW_CONFIG = [
 
     'show_official_banner' => true, // true/false: gelbes Band mit dem Hinweis, dass die Seite nicht von einer Behörde stammt
 
-    'testmode_end' => 'gui', // gui = Umschalten unter /setup, edit = Umschalten sobald die Werte hier stimmen (Fehler stehen im Protokoll)
+    'testmode_end' => 'edit', // gui = Umschalten unter /setup, edit = Umschalten sobald die Werte hier stimmen (Fehler stehen im Protokoll)
 
     'eid_mode' => 'demo', // demo = Anmeldung über die Trust-Liste, eid = nur über eigenen eID-Server
 
