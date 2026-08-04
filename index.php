@@ -420,7 +420,7 @@ function sw_setup(): void
 
     setup_apply(setup_load());
 
-    $dbPath = getenv('buergerabstimmung_DB') ?: SW::$dataDir . '/buergerabstimmung.sqlite';
+    $dbPath = getenv('BUERGERABSTIMMUNG_DB') ?: SW::$dataDir . '/buergerabstimmung.sqlite';
     SW::$db = new Db($dbPath);
     SW::$db->migrate();
     sw_seed_categories();
@@ -4806,7 +4806,7 @@ function web_main(): void
 
 function cli_switch_db(string $tmpDir, string $name): void
 {
-    putenv('buergerabstimmung_DB=' . $tmpDir . '/' . $name . '.sqlite');
+    putenv('BUERGERABSTIMMUNG_DB=' . $tmpDir . '/' . $name . '.sqlite');
     SW::$db = new Db($tmpDir . '/' . $name . '.sqlite');
     SW::$db->migrate();
     sw_seed_categories();
@@ -5373,7 +5373,7 @@ function cli_selftest(): int
     $check('Keine leeren englischen Texte', $emptyVals === []);
 
     Clock::setTestNow(null);
-    putenv('buergerabstimmung_DB');
+    putenv('BUERGERABSTIMMUNG_DB');
     array_map('unlink', glob($tmpDir . '/*') ?: []);
     rmdir($tmpDir);
     printf("\nErgebnis: %d bestanden, %d fehlgeschlagen.\n", $pass, $fail);
