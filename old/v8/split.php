@@ -1,5 +1,5 @@
 <?php
-
+//buergerabstimmung.css
 declare(strict_types=1);
 
 if (PHP_VERSION_ID < 80000) {
@@ -2616,7 +2616,7 @@ const SW_EN = [
     'error.consent' => 'This needs the session cookie. Please accept on the sign-in page.',
 ];
 
-const SW_CSS_FILE = 'app.css'; // Stylesheet im selben Ordner
+const SW_CSS_FILE = 'buergerabstimmung.css'; // Stylesheet im selben Ordner
 
 const SW_JS = <<<'JS'
 
@@ -4617,7 +4617,7 @@ function web_main(): void
         serve_asset('css');
     }
     if (preg_match('#^/a/(app\.css|app\.js|icon\.svg)$#', $path, $m) === 1) {
-        $kindMap = ['app.css' => 'css', 'app.js' => 'js', 'icon.svg' => 'icon'];
+        $kindMap = ['buergerabstimmung.css' => 'css', 'app.js' => 'js', 'icon.svg' => 'icon'];
         serve_asset($kindMap[$m[1]]);
     }
     if ($path === '/robots.txt') {
@@ -5353,8 +5353,8 @@ function cli_selftest(): int
 
     echo "== Stylesheet ==\n";
     $css = asset_source('css');
-    $check('app.css liegt neben index.php', $css !== '', SW_CSS_FILE . ' fehlt');
-    $check('app.css enthält die Balkenanteile', strpos($css, '.w-100 {') !== false);
+    $check('buergerabstimmung.css liegt neben index.php', $css !== '', SW_CSS_FILE . ' fehlt');
+    $check('buergerabstimmung.css enthält die Balkenanteile', strpos($css, '.w-100 {') !== false);
 
     echo "== Sprachtabellen ==\n";
     $dupes = static function (string $const): array {
