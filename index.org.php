@@ -19,7 +19,7 @@ if (PHP_VERSION_ID < 80000) {
 
 const SW_CONFIG = [
     'app_name' => 'Bürgerabstimmung', // Name in Titel und Fußzeile
-    'domain'   => '', // leer = Host der Anfrage; im Echtbetrieb hier die feste Domain eintragen
+    'domain'   => 'buergerabstimmung.org', // leer = Host der Anfrage; im Echtbetrieb hier die feste Domain eintragen
 
     'show_official_banner' => true, // true/false: gelbes Band mit dem Hinweis, dass die Seite nicht von einer Behörde stammt
 
@@ -31,8 +31,8 @@ const SW_CONFIG = [
 
     // Abgleich der Listen: nur https://raw.githubusercontent.com/..., leer = kein Abgleich.
     // Es werden ausschließlich neue Werte ergänzt, nie welche geändert oder gelöscht.
-    'categories_url' => '', // z. B. https://raw.githubusercontent.com/KONTO/REPO/main/categories.json
-    'regions_url'    => '', // z. B. https://raw.githubusercontent.com/KONTO/REPO/main/regions.json
+    'categories_url' => 'https://raw.githubusercontent.com/florianthepro/buergerabstimmung/main/categories.json', // z. B. https://raw.githubusercontent.com/KONTO/REPO/main/categories.json
+    'regions_url'    => 'https://raw.githubusercontent.com/florianthepro/buergerabstimmung/main/regions.json', // z. B. https://raw.githubusercontent.com/KONTO/REPO/main/regions.json
 
     'eid_client_url' => 'http://127.0.0.1:24727/eID-Client', // Ausweis-App auf dem Gerät (BSI TR-03124)
 
