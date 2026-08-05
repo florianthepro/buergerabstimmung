@@ -19,7 +19,7 @@ if (PHP_VERSION_ID < 80000) {
 
 const SW_CONFIG = [
     'app_name' => 'Bürgerabstimmung', // Name in Titel und Fußzeile
-    'domain'   => '', // leer = Host der Anfrage; im Echtbetrieb hier die feste Domain eintragen
+    'domain'   => 'buergerabstimmung.org', // leer = Host der Anfrage; im Echtbetrieb hier die feste Domain eintragen
 
     'show_official_banner' => true, // true/false: gelbes Band mit dem Hinweis, dass die Seite nicht von einer Behörde stammt
 
