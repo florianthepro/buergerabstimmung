@@ -21,3 +21,29 @@ naturfarben: bege, kajak, olivgrün
 
 
 laptop ansicht speeren
+
+
+:root {
+  color-scheme: light dark;
+  --page: #f2f2f7; --surface: #ffffff; --field: #efeff4;
+  --ink: #000000; --muted: #8e8e93; --sep: #d1d1d6;
+  --accent: #0000ee; --accent-ink: #ffffff; --accent-soft: rgba(0,0,238,0.12);
+  --danger: #b22222; --danger-soft: rgba(178,34,34,0.10);
+  --vote-for: #0000ee; --vote-against: #aeaeb2; --track: #e5e5ea;
+  --warn-bg: #ffd60a; --warn-ink: #1c1c00;
+  --btn-dim: #dedee4; --btn-dim-ink: #5b5b60;
+  --btn-locked: #f0eaf7; --btn-locked-ink: #551a8b;
+  --radius: 14px; --radius-sm: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #000000; --surface: #1c1c1e; --field: #2c2c2e;
+    --ink: #ffffff; --muted: #98989d; --sep: #38383a;
+    --accent: #7e7bf6; --accent-ink: #ffffff; --accent-soft: rgba(126,123,246,0.22);
+    --danger: #d96a55; --danger-soft: rgba(217,106,85,0.18);
+    --vote-for: #7e7bf6; --vote-against: #8e8e93; --track: #2c2c2e;
+    --warn-bg: #ffd60a; --warn-ink: #1c1c00;
+    --btn-dim: #0f0f11; --btn-dim-ink: #98989d;
+    --btn-locked: #2a2140; --btn-locked-ink: #c4a5f0;
+  }
+}
