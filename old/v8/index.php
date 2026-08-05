@@ -2347,7 +2347,7 @@ const SW_DE = [
     'error.method' => 'Anfrageart nicht unterstützt.',
 
     'footer.home' => 'Startseite',
-    'footer.about' => 'Über die Seite',
+    'footer.about' => 'Über uns',
     'footer.imprint' => 'Impressum',
     'footer.privacy' => 'Datenschutz',
 
