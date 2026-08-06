@@ -19,7 +19,7 @@ if (PHP_VERSION_ID < 80000) {
 
 const SW_CONFIG = [
     'app_name' => 'Bürgerabstimmung', // Name in Titel und Fußzeile
-    'domain'   => '', // leer = Host der Anfrage; im Echtbetrieb hier die feste Domain eintragen
+    'domain'   => 'buergerabstimmung.org', // leer = Host der Anfrage; im Echtbetrieb hier die feste Domain eintragen
 
     'show_official_banner' => true, // true/false: gelbes Band mit dem Hinweis, dass die Seite nicht von einer Behörde stammt
 
@@ -32,7 +32,7 @@ const SW_CONFIG = [
     // Abgleich der Listen: nur https://raw.githubusercontent.com/..., leer = kein Abgleich.
     // Es werden ausschließlich neue Werte ergänzt, nie welche geändert oder gelöscht.
     'pc_locked' => true, // true = am Rechner erscheint nur der Hinweis, die Seite am Handy zu öffnen
-    'nur_bund' => false, // true = alles gilt für ganz Deutschland; keine Gebietsauswahl, keine Gebietsanzeige
+    'nur_bund' => true, // true = alles gilt für ganz Deutschland; keine Gebietsauswahl, keine Gebietsanzeige fasls=kathegorien für lander
     'list_sync' => 'auto', // auto = die Seite gleicht selbst ab (kein Zeitplaner nötig), cron = nur über „php index.php cron“
     'categories_url' => 'https://raw.githubusercontent.com/florianthepro/buergerabstimmung/main/categories.json', // z. B. https://raw.githubusercontent.com/KONTO/REPO/main/categories.json
     'regions_url'    => 'https://raw.githubusercontent.com/florianthepro/buergerabstimmung/main/regions.json', // z. B. https://raw.githubusercontent.com/KONTO/REPO/main/regions.json
