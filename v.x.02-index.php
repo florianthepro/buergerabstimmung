@@ -407,6 +407,9 @@ function sw_setup(): void
         throw new RuntimeException('Verzeichnis data/ nicht anlegbar.');
     }
     ini_set('error_log', SW::$dataDir . '/php-error.log');
+    if (is_file(SW::$dataDir . '/php-error.log')) {
+        @chmod(SW::$dataDir . '/php-error.log', 0600);
+    }
 
     $dataHt = SW::$dataDir . '/.htaccess';
     if (!is_file($dataHt)) {
@@ -816,7 +819,30 @@ function log_line(string $level, string $event, array $context = []): void
         $event,
         $context === [] ? '' : json_encode($context, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
     );
-    @file_put_contents(SW::$dataDir . '/app.log', $line, FILE_APPEND | LOCK_EX);
+    $datei = SW::$dataDir . '/app.log';
+    $neu = !is_file($datei);
+    @file_put_contents($datei, $line, FILE_APPEND | LOCK_EX);
+    if ($neu) {
+        @chmod($datei, 0600);
+    }
+}
+
+const SW_LOG_KEEP_DAYS = 30;
+const SW_LOG_MAX_BYTES = 10485760;
+
+function log_gc(): void
+{
+    foreach (['app.log', 'php-error.log'] as $name) {
+        $datei = SW::$dataDir . '/' . $name;
+        if (!is_file($datei)) {
+            continue;
+        }
+        $alter = Clock::now()->getTimestamp() - (int) @filemtime($datei);
+        if ($alter > SW_LOG_KEEP_DAYS * 86400 || (int) @filesize($datei) > SW_LOG_MAX_BYTES) {
+            @file_put_contents($datei, '', LOCK_EX);
+            @chmod($datei, 0600);
+        }
+    }
 }
 
 function sw_is_https(): bool
@@ -989,6 +1015,19 @@ function session_boot(): void
         'httponly' => true,
         'samesite' => 'Lax',
     ]);
+    // Eigener Sitzungsspeicher: auf geteiltem Hosting liegen die Dateien sonst in
+    // einem Verzeichnis, das andere Mandanten lesen koennen.
+    $sitzungsDir = SW::$dataDir . '/sessions';
+    if (!is_dir($sitzungsDir)) {
+        @mkdir($sitzungsDir, 0700, true);
+    }
+    if (is_dir($sitzungsDir) && is_writable($sitzungsDir)) {
+        @ini_set('session.save_path', $sitzungsDir);
+    }
+    // Keine vom Client erfundenen Kennungen uebernehmen, keine Kennung in der Adresse.
+    @ini_set('session.use_strict_mode', '1');
+    @ini_set('session.use_only_cookies', '1');
+    @ini_set('session.gc_maxlifetime', (string) max(1800, (int) SW::$cfg['session_idle_minutes'] * 60));
     session_start();
     $now = time();
     $idle = isset($_SESSION['last_activity'])
@@ -2842,6 +2881,7 @@ function maintenance_tick(): void
         });
     }
     rate_gc();
+    log_gc();
 }
 
 function maintenance_tick_throttled(): void
@@ -3095,6 +3135,14 @@ const SW_DE = [
     'footer.about' => 'Über uns',
     'footer.imprint' => 'Impressum',
     'footer.privacy' => 'Datenschutz',
+    'footer.account' => 'Konto',
+    'account.h' => 'Konto',
+    'account.data' => 'Meine Daten herunterladen',
+    'account.data_hint' => 'Die Datei enthält die Kennung des Kontos, die abgegebenen Stimmen, eigene Themen, Lesezeichen und Meldungen.',
+    'account.delete' => 'Konto löschen',
+    'account.delete_hint' => 'Das Konto wird sofort gelöscht. Eigene Themen bleiben ohne Angabe einer Person bestehen, abgegebene Stimmen bleiben in den Ergebnissen und lassen sich danach niemandem mehr zuordnen. Der Vorgang lässt sich nicht rückgängig machen.',
+    'account.delete_confirm' => 'Konto wirklich löschen?',
+    'flash.account_deleted' => 'Das Konto wurde gelöscht.',
 
     'about.h' => 'Über diese Seite',
     'about.p1' => "Bürgerabstimmung ist eine offene Seite. Jeder kann ein politisches Thema zur Abstimmung stellen und über die Themen anderer abstimmen.",
@@ -3359,6 +3407,14 @@ const SW_EN = [
     'footer.about' => 'About',
     'footer.imprint' => 'Legal notice',
     'footer.privacy' => 'Privacy',
+    'footer.account' => 'Account',
+    'account.h' => 'Account',
+    'account.data' => 'Download my data',
+    'account.data_hint' => 'The file contains the account identifier, the votes cast, own topics, bookmarks and reports.',
+    'account.delete' => 'Delete account',
+    'account.delete_hint' => 'The account is deleted immediately. Own topics remain without any person named, votes cast remain in the results and can no longer be linked to anyone. This cannot be undone.',
+    'account.delete_confirm' => 'Really delete this account?',
+    'flash.account_deleted' => 'The account has been deleted.',
 
     'about.h' => 'About this site',
     'about.p1' => "Bürgerabstimmung is an open site. Anyone can put a political topic up for a vote and vote on topics raised by others.",
@@ -4151,6 +4207,7 @@ function v_layout(string $title, string $content): string
         . '<a href="' . e(url('/about')) . '">' . e(t('footer.about')) . '</a>'
         . '<a href="' . e(url('/imprint')) . '">' . e(t('footer.imprint')) . '</a>'
         . '<a href="' . e(url('/privacy')) . '">' . e(t('footer.privacy')) . '</a>'
+        . ($user !== null ? '<a href="' . e(url('/account')) . '">' . e(t('footer.account')) . '</a>' : '')
         . '</nav></div></footer></body></html>';
     return $html;
 }
@@ -4925,12 +4982,15 @@ function v_auth(): void
         . '<path d="M78 12a32 32 0 0 1 0 40" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>'
         . '<path d="M86 6a42 42 0 0 1 0 52" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>'
         . '</svg>';
+    $hinweis = query_str('d', 2) === '1'
+        ? '<div class="flash flash-info" role="status">' . e(t('flash.account_deleted')) . '</div>'
+        : '';
     $mode = (string) SW::$cfg['eid_mode'];
     $card = card_load();
     $ready = $mode !== 'eid' && $card !== null && authorized_contains(card_identity($card));
 
     if (!consent_given()) {
-        render(t('consent.title'), '<section class="card auth-card">' . icon_cookie()
+        render(t('consent.title'), $hinweis . '<section class="card auth-card">' . icon_cookie()
             . '<h1>' . e(t('consent.title')) . '</h1>'
             . '<p class="muted">' . e(t('consent.text')) . '</p>'
             . (test_mode() ? '<p class="muted">' . e(t('consent.test')) . '</p>' : '')
@@ -4939,7 +4999,7 @@ function v_auth(): void
             . e(t('consent.accept')) . '</a></div></section>');
     }
 
-    $html = '<section class="card auth-card">' . $pictogram
+    $html = $hinweis . '<section class="card auth-card">' . $pictogram
         . '<h1>' . e(t('auth.title')) . '</h1>';
 
 
@@ -5021,7 +5081,9 @@ function h_eid_tctoken(): void
     $nonce = query_str('s', 40);
     $errorUrl = site_url('/eid/callback?e=1');
     $flow = eid_flow_find($nonce);
-    if ($flow === null) {
+    // Ein nonce gilt genau einmal: sonst laesst sich mit einem abgefangenen Wert
+    // beliebig oft eine neue Sitzung beim eID-Server eroeffnen.
+    if ($flow === null || (string) ($flow['eid_ref'] ?? '') !== '') {
         echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n"
             . '<TCTokenType><CommunicationErrorAddress>' . e($errorUrl)
             . '</CommunicationErrorAddress></TCTokenType>';
@@ -5037,15 +5099,32 @@ function h_eid_tctoken(): void
         exit;
     }
     eid_flow_bind($nonce, $session['session']);
+    // Die Rueckkehradresse traegt den nonce. Damit ist sie nicht vorhersagbar und
+    // nicht aus dem Sitzungs-Cookie ableitbar (BSI TR-03124-1, Abschnitt 2.6).
+    $refresh = site_url('/eid/callback?r=' . $nonce);
+    // Getrennte Kanaele zu einem fremden eID-Server: der PSK aus der useIDResponse
+    // gehoert in das TC-Token (BSI TR-03124-1, Abschnitt 2.6).
+    $pfadSicherheit = ((string) $session['psk_key']) === '' ? ''
+        : '<PathSecurity-Protocol>urn:ietf:rfc:4279</PathSecurity-Protocol>'
+            . '<PathSecurity-Parameters><PSK>' . e((string) $session['psk_key']) . '</PSK></PathSecurity-Parameters>';
+    $kennung = ((string) $session['psk_id']) !== '' ? (string) $session['psk_id'] : (string) $session['session'];
     echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n"
         . '<TCTokenType>'
         . '<ServerAddress>' . e($session['paos']) . '</ServerAddress>'
-        . '<SessionIdentifier>' . e($session['session']) . '</SessionIdentifier>'
-        . '<RefreshAddress>' . e(site_url('/eid/callback')) . '</RefreshAddress>'
+        . '<SessionIdentifier>' . e($kennung) . '</SessionIdentifier>'
+        . '<RefreshAddress>' . e($refresh) . '</RefreshAddress>'
         . '<CommunicationErrorAddress>' . e($errorUrl) . '</CommunicationErrorAddress>'
         . '<Binding>urn:liberty:paos:2006-08</Binding>'
+        . $pfadSicherheit
         . '</TCTokenType>';
     exit;
+}
+
+function eid_session_key(): string
+{
+    // Nicht die Sitzungskennung selbst ablegen: aus einer kopierten Datenbank liesse
+    // sie sich sonst waehrend der 600 Sekunden uebernehmen.
+    return sw_hmac('sid|' . session_id());
 }
 
 function eid_flow_start(string $nonce): void
@@ -5053,7 +5132,7 @@ function eid_flow_start(string $nonce): void
     SW::$db->run('DELETE FROM eid_flows WHERE created_at < ?', [Clock::now()->getTimestamp() - 600]);
     SW::$db->run(
         'INSERT INTO eid_flows (nonce, session_id, created_at) VALUES (?, ?, ?)',
-        [$nonce, session_id(), Clock::now()->getTimestamp()]
+        [$nonce, eid_session_key(), Clock::now()->getTimestamp()]
     );
 }
 
@@ -5084,7 +5163,7 @@ function eid_server_useid(?array $over = null): ?array
     $soap = '<?xml version="1.0" encoding="UTF-8"?>'
         . '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"'
         . ' xmlns:eid="http://bsi.bund.de/eID/"><soap:Body><eid:useIDRequest>'
-        . '<eid:UseOperations><eid:RestrictedIdentification eid:required="REQUIRED"/></eid:UseOperations>'
+        . '<eid:UseOperations><eid:RestrictedID>REQUIRED</eid:RestrictedID></eid:UseOperations>'
         . '</eid:useIDRequest></soap:Body></soap:Envelope>';
     $ctx = ['http' => [
         'method'  => 'POST',
@@ -5105,7 +5184,7 @@ function eid_server_useid(?array $over = null): ?array
         return null;
     }
     $paos = eid_xml_value($xml, 'eCardServerAddress');
-    $session = eid_xml_value($xml, 'Session');
+    $session = eid_xml_value($xml, 'Session', 'ID');
     if ($session === '') {
         $session = eid_xml_value($xml, 'ID');
     }
@@ -5113,23 +5192,62 @@ function eid_server_useid(?array $over = null): ?array
         log_line('SECURITY', 'eid_server_bad_response', []);
         return null;
     }
-    return ['paos' => $paos, 'session' => $session];
+    return [
+        'paos'    => $paos,
+        'session' => $session,
+        'psk_id'  => eid_xml_value($xml, 'PSK', 'ID'),
+        'psk_key' => eid_xml_value($xml, 'PSK', 'Key'),
+    ];
 }
 
-function eid_xml_value(string $xml, string $name): string
+function eid_xml_doc(string $xml): ?DOMDocument
 {
-    $pattern = '#<(?:[A-Za-z0-9_.-]+:)?' . preg_quote($name, '#') . '(?:\s[^>]*)?>([^<]*)</#';
-    return preg_match($pattern, $xml, $m) === 1 ? trim(html_entity_decode($m[1], ENT_QUOTES, 'UTF-8')) : '';
+    if ($xml === '' || strlen($xml) > 262144) {
+        return null;
+    }
+    $vorher = libxml_use_internal_errors(true);
+    $doc = new DOMDocument();
+    // LIBXML_NONET verbietet Netzwerkzugriffe; ohne LIBXML_NOENT bleiben externe
+    // Entitaeten unaufgeloest. Beides zusammen schliesst XXE aus.
+    $ok = $doc->loadXML($xml, LIBXML_NONET);
+    libxml_clear_errors();
+    libxml_use_internal_errors($vorher);
+    return $ok === true ? $doc : null;
+}
+
+function eid_xml_value(string $xml, string $name, string $child = ''): string
+{
+    foreach ([$name, $child] as $teil) {
+        if ($teil !== '' && preg_match('/^[A-Za-z][A-Za-z0-9_.-]{0,60}$/', $teil) !== 1) {
+            return '';
+        }
+    }
+    $doc = eid_xml_doc($xml);
+    if ($doc === null) {
+        return '';
+    }
+    $pfad = '//*[local-name()="' . $name . '"]';
+    if ($child !== '') {
+        $pfad .= '/*[local-name()="' . $child . '"]';
+    }
+    $treffer = (new DOMXPath($doc))->query($pfad);
+    if ($treffer === false || $treffer->length === 0) {
+        return '';
+    }
+    return trim((string) $treffer->item(0)->textContent);
 }
 
 function h_eid_callback(): void
 {
+    $sitzung = eid_session_key();
     $flow = SW::$db->one(
         'SELECT * FROM eid_flows WHERE session_id = ? ORDER BY created_at DESC LIMIT 1',
-        [session_id()]
+        [$sitzung]
     );
-    SW::$db->run('DELETE FROM eid_flows WHERE session_id = ?', [session_id()]);
-    if ($flow === null || ($flow['eid_ref'] ?? '') === '' || query_str('e', 4) !== '') {
+    SW::$db->run('DELETE FROM eid_flows WHERE session_id = ?', [$sitzung]);
+    $rueck = query_str('r', 40);
+    if ($flow === null || ($flow['eid_ref'] ?? '') === '' || query_str('e', 4) !== ''
+        || $rueck === '' || !hash_equals((string) $flow['nonce'], $rueck)) {
         flash('error', 'flash.eid_required');
         redirect('/auth');
     }
@@ -5661,6 +5779,41 @@ function pc_stats_page(): array
     // begrenzt die Rechenarbeit bei vielen Aufrufen. Sprache und Geraet bleiben getrennt.
     $page['cache'] = 60;
     return $page;
+}
+
+function v_account(): void
+{
+    require_user();
+    $html = '<section class="card">'
+        . '<h1>' . e(t('account.h')) . '</h1>'
+        . '<p class="muted">' . e(t('account.data_hint')) . '</p>'
+        . '<p><a class="btn btn-outline btn-sm" href="' . e(url('/profil.yaml')) . '">' . e(t('account.data')) . '</a></p>'
+        . '<hr class="hr-soft">'
+        . '<p class="muted">' . e(t('account.delete_hint')) . '</p>'
+        . '<p><a class="btn btn-danger btn-sm" href="#modal-account-del">' . e(t('account.delete')) . '</a></p>'
+        . '</section>';
+    $inner = '<p class="muted">' . e(t('account.delete_confirm')) . '</p>'
+        . '<form method="post" action="' . e(url('/account/delete')) . '">' . csrf_field()
+        . '<div class="btn-row"><button type="submit" class="btn btn-danger">' . e(t('account.delete')) . '</button>'
+        . '<a class="btn btn-ghost" href="#">' . e(t('common.close')) . '</a></div></form>';
+    $html .= modal('modal-account-del', t('account.delete'), $inner);
+    render(t('account.h'), $html);
+}
+
+function h_account_delete(): void
+{
+    $user = require_user();
+    require_card($user);
+    if (!rate_allow('account:' . (int) $user['id'], 5, 600)) {
+        flash('error', 'flash.rate_limited');
+        redirect('/account');
+    }
+    account_delete((int) $user['id']);
+    SW::$user = null;
+    log_line('SECURITY', 'account_deleted', []);
+    // Loescht Sitzung und alle Cookies; die Bestaetigung steht deshalb in der Adresse.
+    session_forget();
+    redirect('/auth?d=1');
 }
 
 function v_error_404(): void
@@ -6361,8 +6514,11 @@ function web_main(): void
             redirect($backTo . (lang_valid($wish) ? $sep . 'lang=' . rawurlencode($wish) : ''));
         }
 
+        // Das TC-Token holt die AusweisApp mit eigenem HTTP-Client ohne Cookies
+        // (BSI TR-03124-1). Der Pfad braucht deshalb keine Zustimmung; erreichbar ist
+        // er nur mit dem nonce: 128 Bit Zufall, 600 Sekunden, genau eine Verwendung.
         $public = $path === '/' || preg_match('#^/topic/\d{1,10}$#', $path) === 1
-            || in_array($path, ['/start', '/auth', '/about', '/imprint', '/privacy', '/api/topics'], true);
+            || in_array($path, ['/start', '/auth', '/about', '/imprint', '/privacy', '/api/topics', '/eid/tctoken'], true);
         if (!consent_given() && !($reading && $public)) {
             v_error(403, 'error.consent');
         }
@@ -6438,6 +6594,12 @@ function web_main(): void
             exit;
         }
 
+        if ($path === '/account' && $isGet) {
+            v_account();
+        }
+        if ($path === '/account/delete' && $method === 'POST') {
+            h_account_delete();
+        }
         if ($path === '/auth' && $isGet) {
             v_auth();
         }
@@ -7480,6 +7642,83 @@ function cli_selftest(): int
         && function_exists('sw_sync_after_response'));
     $check('Zu kleine Liste faellt auf die eingebaute zurueck',
         count(sw_list_load('gibtesnicht.json', 'sw_regions_clean', SW_REGIONS, 4)) === 16);
+
+    echo "== Pflichtanpassungen eID, Konto, Protokolle ==\n";
+    $quelltext = static function (string $funktion): string {
+        $src = file_get_contents(__FILE__);
+        $ab = (int) strpos($src, 'function ' . $funktion . '(');
+        $teil = substr($src, $ab);
+        return substr($teil, 0, (int) strpos($teil, "\nfunction ", 20));
+    };
+    $check('TC-Token ist ohne Zustimmung erreichbar', (static function () use ($quelltext): bool {
+        $wm = $quelltext('web_main');
+        $ab = (int) strpos($wm, '$public = ');
+        return strpos(substr($wm, $ab, (int) strpos($wm, ';', $ab) - $ab), "'/eid/tctoken'") !== false;
+    })());
+    $check('useIDRequest nutzt das Feld RestrictedID',
+        strpos($quelltext('eid_server_useid'), '<eid:RestrictedID>REQUIRED</eid:RestrictedID>') !== false
+        && strpos($quelltext('eid_server_useid'), 'RestrictedIdentification') === false);
+    $check('nonce gilt einmal, TC-Token traegt PSK und Rueckkehrkennung', (static function () use ($quelltext): bool {
+        $fn = $quelltext('h_eid_tctoken');
+        return strpos($fn, "\$flow['eid_ref'] ?? ''") !== false
+            && strpos($fn, 'PathSecurity-Protocol') !== false
+            && strpos($fn, '/eid/callback?r=') !== false;
+    })());
+    $check('Rueckkehr verlangt den passenden nonce',
+        strpos($quelltext('h_eid_callback'), 'hash_equals((string) $flow[\'nonce\'], $rueck)') !== false
+        && strpos($quelltext('h_eid_callback'), 'eid_session_key()') !== false);
+    $check('Sitzungskennung steht nur als Pruefwert in der Datenbank',
+        eid_session_key() !== session_id()
+        && strlen(eid_session_key()) === 64
+        && eid_session_key() === eid_session_key());
+    $check('Sitzungen liegen im Datenverzeichnis und pruefen die Kennung streng', (static function () use ($quelltext): bool {
+        $fn = $quelltext('session_boot');
+        return strpos($fn, 'session.use_strict_mode') !== false
+            && strpos($fn, "'/sessions'") !== false
+            && strpos($fn, 'session.gc_maxlifetime') !== false;
+    })());
+    $xmlProbe = '<?xml version="1.0"?><r xmlns:e="http://bsi.bund.de/eID/">'
+        . '<e:Session><e:ID>S1</e:ID></e:Session>'
+        . '<e:PSK><e:ID>P1</e:ID><e:Key>ABCDEF</e:Key></e:PSK>'
+        . '<e:eCardServerAddress>https://eid.example/paos</e:eCardServerAddress></r>';
+    $check('Antwort des eID-Servers wird als XML gelesen',
+        eid_xml_value($xmlProbe, 'Session', 'ID') === 'S1'
+        && eid_xml_value($xmlProbe, 'PSK', 'ID') === 'P1'
+        && eid_xml_value($xmlProbe, 'PSK', 'Key') === 'ABCDEF'
+        && eid_xml_value($xmlProbe, 'eCardServerAddress') === 'https://eid.example/paos'
+        && eid_xml_value('kein xml', 'Session') === ''
+        && eid_xml_value($xmlProbe, 'Se ssion') === '');
+    $check('Externe Entitaeten werden nicht aufgeloest', (static function (): bool {
+        $xxe = '<?xml version="1.0"?><!DOCTYPE r [<!ENTITY x SYSTEM "file:///etc/passwd">]>'
+            . '<r><Session><ID>&x;</ID></Session></r>';
+        return strpos(eid_xml_value($xxe, 'Session', 'ID'), 'root:') === false;
+    })());
+    $check('Konto laesst sich ueber die Oberflaeche loeschen', (static function () use ($quelltext): bool {
+        $wm = $quelltext('web_main');
+        return strpos($wm, "'/account/delete'") !== false && strpos($wm, "'/account'") !== false
+            && function_exists('v_account') && function_exists('h_account_delete');
+    })());
+    $loeschUser = cli_add_users(1, 'del')[0];
+    $loeschThema = topic_create($loeschUser, 'Thema vor der Kontoloeschung', 'Ziel des Themas hier.',
+        'Begründung des Themas hier.', $leseCat, 'bund', null, 'date', substr(Clock::addDaysStr(Clock::nowStr(), 30), 0, 10), null);
+    vote_cast(cli_add_users(1, 'dv')[0], $loeschThema, 'for');
+    SW::$db->run('INSERT INTO favorites (user_id, kind, ref, created_at) VALUES (?, ?, ?, ?)',
+        [$loeschUser, 'topic', (string) $loeschThema, Clock::nowStr()]);
+    account_delete($loeschUser);
+    $systemId = (int) SW::$db->val('SELECT id FROM users WHERE is_system = 1 LIMIT 1');
+    $check('Kontoloeschung raeumt auf und haelt Thema und Stimmen',
+        (int) SW::$db->val('SELECT COUNT(*) FROM users WHERE id = ?', [$loeschUser]) === 0
+        && (int) SW::$db->val('SELECT author_id FROM topics WHERE id = ?', [$loeschThema]) === $systemId
+        && (int) SW::$db->val('SELECT COUNT(*) FROM favorites WHERE user_id = ?', [$loeschUser]) === 0
+        && (int) SW::$db->val('SELECT COUNT(*) FROM votes WHERE topic_id = ?', [$loeschThema]) === 1);
+    $protokoll = SW::$dataDir . '/app.log';
+    @file_put_contents($protokoll, str_repeat('x', 200));
+    @touch($protokoll, Clock::now()->getTimestamp() - (SW_LOG_KEEP_DAYS + 1) * 86400);
+    log_gc();
+    $check('Altes Protokoll wird geleert', (int) @filesize($protokoll) === 0);
+    @file_put_contents($protokoll, str_repeat('y', SW_LOG_MAX_BYTES + 10));
+    log_gc();
+    $check('Zu grosses Protokoll wird geleert', (int) @filesize($protokoll) === 0);
 
     echo "== Sprachtabellen ==\n";
     $dupes = static function (string $const): array {
