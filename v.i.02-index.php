@@ -31,7 +31,8 @@ const SW_CONFIG = [
 
     // Abgleich der Listen: nur https://raw.githubusercontent.com/..., leer = kein Abgleich.
     // Es werden ausschließlich neue Werte ergänzt, nie welche geändert oder gelöscht.
-    'pc_locked' => true, // true = am Rechner erscheint nur der Hinweis, die Seite am Handy zu öffnen
+    'pc_locked' => true, // true = am Rechner keine Anmeldung und keine Eingaben: nur der Hinweis oder, mit pc_read, die Lese-Ansicht
+    'pc_read' => true, // true = am Rechner gibt es dazu eine Lese-Ansicht mit Themen und Statistik (nur lesen, keine Anmeldung, keine Cookies)
     'nur_bund' => true, // true = alles gilt für ganz Deutschland; keine Gebietsauswahl, keine Gebietsanzeige fasls=kathegorien für lander
     'list_sync' => 'auto', // auto = die Seite gleicht selbst ab (kein Zeitplaner nötig), cron = nur über „php index.php cron“
     'categories_url' => 'https://raw.githubusercontent.com/florianthepro/buergerabstimmung/main/categories.json', // z. B. https://raw.githubusercontent.com/KONTO/REPO/main/categories.json
@@ -1514,6 +1515,11 @@ function sw_pc_locked(): bool
     return !empty(SW::$cfg['pc_locked']);
 }
 
+function sw_pc_read(): bool
+{
+    return sw_pc_locked() && !empty(SW::$cfg['pc_read']);
+}
+
 // Diese Seiten bleiben am Rechner erreichbar: Impressum und Datenschutz muessen
 // staendig verfuegbar sein, und die Einrichtung macht niemand am Handy.
 function sw_lock_exempt(string $path): bool
@@ -2287,6 +2293,33 @@ const SW_TOPIC_SELECT = "
     FROM topics t
     JOIN categories c ON c.id = t.category_id";
 
+// Suche, Kategorie, Gebiet und Sortierung aus der Abfrage; Handy- und Lese-Ansicht
+// werten sie an genau einer Stelle aus.
+function topics_query_filters(): array
+{
+    $scopeValue = sw_bund_only() ? '' : query_str('gebiet', 160);
+    $scopeDecoded = $scopeValue === '' ? null : scope_decode($scopeValue);
+    if ($scopeDecoded === null) {
+        $scopeValue = '';
+    }
+    $sortWish = query_str('sort', 10);
+    return [
+        'category' => query_str('category', 64),
+        'level'    => $scopeDecoded === null ? '' : $scopeDecoded[0],
+        'scope'    => $scopeDecoded === null || $scopeDecoded[1] === null ? '' : $scopeDecoded[1],
+        'gebiet'   => $scopeValue,
+        'q'        => query_str('q', 80),
+        'sort'     => in_array($sortWish, ['new', 'top'], true) ? $sortWish : 'net',
+    ];
+}
+
+function vote_pct(int $for, int $against): array
+{
+    $total = $for + $against;
+    $pctFor = $total > 0 ? (int) round($for * 100 / $total) : 0;
+    return [$pctFor, $total > 0 ? 100 - $pctFor : 0];
+}
+
 function topics_list(array $filters, int $page, int $perPage, ?int $userId): array
 {
     $where = ["t.status IN ('active','closed')"];
@@ -2840,6 +2873,31 @@ const SW_DE = [
     'banner.official' => 'Keine offizielle Seite der Bundesregierung oder einer Behörde.',
     'lock.title' => 'Bitte am Handy öffnen',
     'lock.body' => 'Zum Abstimmen werden der Personalausweis und ein Handy gebraucht. Diese Seite ist dafür gemacht und lässt sich nur dort nutzen.',
+    'pc.read_hint' => 'Lese-Ansicht. Abstimmen, Themen anlegen und Merken geht nur am Handy mit dem Personalausweis.',
+    'pc.nav_topics' => 'Themen',
+    'pc.nav_stats' => 'Statistik',
+    'pc.vote_hint' => 'Abstimmen ist nur am Handy möglich.',
+    'pc.results' => 'Ergebnis',
+    'stats.h' => 'Statistik',
+    'stats.as_of' => 'Stand: {time}',
+    'stats.topics_active' => 'Laufende Themen',
+    'stats.topics_closed' => 'Beendete Themen',
+    'stats.votes' => 'Abgegebene Stimmen',
+    'stats.users' => 'Angemeldete Konten',
+    'stats.by_choice' => 'Stimmen nach Antwort',
+    'stats.by_category' => 'Themen und Stimmen je Kategorie',
+    'stats.by_level' => 'Themen je Ebene',
+    'stats.top' => 'Themen mit den meisten Stimmen',
+    'stats.topics_month' => 'Neue Themen je Monat',
+    'stats.votes_month' => 'Stimmen je Monat',
+    'stats.col_category' => 'Kategorie',
+    'stats.col_level' => 'Ebene',
+    'stats.col_month' => 'Monat',
+    'stats.col_topics' => 'Themen',
+    'stats.col_votes' => 'Stimmen',
+    'stats.col_share' => 'Anteil',
+    'stats.col_answer' => 'Antwort',
+    'stats.none' => 'Noch keine Daten.',
     'a11y.skip' => 'Zum Inhalt springen',
     'nav.topics' => 'Themen',
     'nav.jury' => 'Jury',
@@ -3079,6 +3137,31 @@ const SW_EN = [
     'banner.official' => 'Not an official website of the German federal government or any public authority.',
     'lock.title' => 'Please open this on a phone',
     'lock.body' => 'Voting requires the national ID card and a phone. This site is built for that and can only be used there.',
+    'pc.read_hint' => 'Read-only view. Voting, creating topics and bookmarks work only on a phone with the national ID card.',
+    'pc.nav_topics' => 'Topics',
+    'pc.nav_stats' => 'Statistics',
+    'pc.vote_hint' => 'Voting is only possible on a phone.',
+    'pc.results' => 'Result',
+    'stats.h' => 'Statistics',
+    'stats.as_of' => 'As of: {time}',
+    'stats.topics_active' => 'Open topics',
+    'stats.topics_closed' => 'Closed topics',
+    'stats.votes' => 'Votes cast',
+    'stats.users' => 'Registered accounts',
+    'stats.by_choice' => 'Votes by answer',
+    'stats.by_category' => 'Topics and votes by category',
+    'stats.by_level' => 'Topics by level',
+    'stats.top' => 'Topics with the most votes',
+    'stats.topics_month' => 'New topics per month',
+    'stats.votes_month' => 'Votes per month',
+    'stats.col_category' => 'Category',
+    'stats.col_level' => 'Level',
+    'stats.col_month' => 'Month',
+    'stats.col_topics' => 'Topics',
+    'stats.col_votes' => 'Votes',
+    'stats.col_share' => 'Share',
+    'stats.col_answer' => 'Answer',
+    'stats.none' => 'No data yet.',
     'a11y.skip' => 'Skip to content',
     'nav.topics' => 'Topics',
     'nav.jury' => 'Jury',
@@ -4237,19 +4320,7 @@ function v_main(array $formErrors = [], ?array $formOld = null): void
         $html .= '<div class="flash">' . e(t('me.jury_upcoming', ['date' => Clock::displayLocal((string) $upcoming['voting_starts_at'], t('common.date_format'))])) . '</div>';
     }
 
-    $scopeValue = sw_bund_only() ? '' : query_str('gebiet', 160);
-    $scopeDecoded = $scopeValue === '' ? null : scope_decode($scopeValue);
-    if ($scopeDecoded === null) {
-        $scopeValue = '';
-    }
-    $filters = [
-        'category' => query_str('category', 64),
-        'level'    => $scopeDecoded === null ? '' : $scopeDecoded[0],
-        'scope'    => $scopeDecoded === null || $scopeDecoded[1] === null ? '' : $scopeDecoded[1],
-        'gebiet'   => $scopeValue,
-        'q'        => query_str('q', 80),
-        'sort'     => in_array(query_str('sort', 10), ['new', 'top'], true) ? query_str('sort', 10) : 'net',
-    ];
+    $filters = topics_query_filters();
     $page = query_int('page', 1, 500, 1);
     $perPage = (int) SW::$cfg['page_size'];
     $result = topics_list($filters, $page, $perPage, $userId);
@@ -5083,7 +5154,7 @@ function pc_lang(): string
 // Baut eine eigenstaendige Seite. Vom Ausliefern getrennt, damit der Selbsttest sie
 // pruefen kann. Sie steht fuer sich allein: kein Stylesheet, kein Skript, kein Symbol
 // von aussen. $hier ist der eigene Pfad, damit der Fussweg ihn hervorheben kann.
-function pc_shell(string $code, string $title, string $inner, string $hier): array
+function pc_css(): string
 {
     $css = 'html{-webkit-text-size-adjust:100%}'
         . '*{box-sizing:border-box}'
@@ -5093,6 +5164,12 @@ function pc_shell(string $code, string $title, string $inner, string $hier): arr
         . '.lang a{display:inline-block;padding:.3rem .7rem;border:1px solid #000;color:#000;'
         . 'text-decoration:none;font-size:.8125rem;letter-spacing:.03em}'
         . '.lang a[aria-current]{background:#000;color:#fff}'
+        . '.top{display:flex;align-items:center;gap:1.5rem;padding:.75rem 1.25rem;border-bottom:1px solid #000}'
+        . '.top .lang{padding:0;border:0;margin-left:auto}'
+        . '.brand{font-weight:700;color:#000;text-decoration:none}'
+        . '.menu{display:flex;gap:1.25rem}'
+        . '.menu a{color:#000;text-decoration:none;padding:.25rem 0;border-bottom:2px solid transparent}'
+        . '.menu a[aria-current]{border-bottom-color:#000;font-weight:700}'
         . 'main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;'
         . 'text-align:center;gap:1rem;padding:3rem 1.5rem;max-width:34rem;margin:0 auto;width:100%}'
         . 'main svg{width:3.25rem;height:3.25rem}'
@@ -5103,25 +5180,87 @@ function pc_shell(string $code, string $title, string $inner, string $hier): arr
         . 'main.text h1{margin:0 0 1.25rem}'
         . 'main.text p{margin:0 0 1rem;max-width:none}'
         . 'main.text p:last-child{margin-bottom:0}'
+        . 'main.read{justify-content:flex-start;align-items:stretch;text-align:left;max-width:72rem;'
+        . 'padding:2rem 1.5rem 3rem;gap:1.25rem}'
+        . 'main.read.detail{max-width:46rem}'
+        . 'main.read h1{font-size:1.4rem}'
+        . 'main.read h2{margin:.5rem 0 0;font-size:1.05rem}'
+        . 'main.read p{max-width:none}'
+        . 'main.read ul{margin:0;padding-left:1.25rem}'
+        . 'main.read a{color:#000}'
+        . '.note{font-size:.9rem;opacity:.7}'
+        . '.filters{display:flex;flex-wrap:wrap;gap:.75rem;align-items:flex-end}'
+        . '.filters label{display:flex;flex-direction:column;gap:.25rem;font-size:.8rem}'
+        . '.filters input,.filters select{font:inherit;padding:.4rem .5rem;border:1px solid #000;'
+        . 'background:#fff;color:#000;min-width:11rem}'
+        . '.filters button{font:inherit;padding:.45rem .9rem;border:1px solid #000;background:#000;color:#fff;cursor:pointer}'
+        . '.filters a{align-self:center;font-size:.85rem}'
+        . '.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(19rem,1fr));gap:1rem}'
+        . '.item{border:1px solid #000;padding:1rem;display:flex;flex-direction:column;gap:.5rem}'
+        . '.item h2{margin:0;font-size:1.05rem;line-height:1.35}'
+        . '.item h2 a{text-decoration:none}'
+        . '.item h2 a:hover{text-decoration:underline}'
+        . '.item p{font-size:.95rem;flex:1}'
+        . '.meta{display:flex;flex-wrap:wrap;gap:.4rem;font-size:.75rem}'
+        . '.meta span{border:1px solid #000;padding:.1rem .45rem}'
+        . '.bar{display:flex;height:.5rem;border:1px solid #000}'
+        . '.bar span{display:block;height:100%;background:#000}'
+        . '.bar .against{opacity:.3}'
+        . '.nums{display:flex;flex-wrap:wrap;gap:1rem;font-size:.85rem}'
+        . '.pages{display:flex;gap:1rem;align-items:center;justify-content:center}'
+        . '.kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(11rem,1fr));gap:1rem}'
+        . '.kpi div{border:1px solid #000;padding:1rem}'
+        . '.kpi b{display:block;font-size:1.8rem;line-height:1.1}'
+        . '.kpi span{font-size:.8rem}'
+        . 'table.stats{border-collapse:collapse;width:100%;font-size:.95rem}'
+        . 'table.stats th,table.stats td{border-bottom:1px solid #000;padding:.45rem .5rem;text-align:left;vertical-align:top;font-weight:400}'
+        . 'table.stats thead th{font-weight:700}'
+        . 'table.stats td.n{text-align:right;white-space:nowrap}'
+        . 'table.stats td.w{width:40%}'
+        . '.hbar{height:.6rem;border:1px solid #000}'
+        . '.hbar span{display:block;height:100%;background:#000}'
         . 'footer{padding:1.25rem;text-align:center;border-top:1px solid #000;font-size:.85rem}'
         . 'footer a{color:#000;margin:0 .55rem;display:inline-block}'
-        . 'footer a[aria-current]{font-weight:700}'
-        . '@media(prefers-color-scheme:dark){'
-        . 'body{background:#000;color:#fff}'
-        . '.lang,footer{border-color:#fff}'
+        . 'footer a[aria-current]{font-weight:700}';
+    // Breiten fuer die Balken: kein Inline-Stil, die Richtlinie erlaubt nur das eingebettete Stylesheet.
+    for ($i = 0; $i <= 100; $i++) {
+        $css .= '.w-' . $i . '{width:' . $i . '%}';
+    }
+    $css .= '@media(prefers-color-scheme:dark){'
+        . 'body{background:#000;color:#fff;color-scheme:dark}'
+        . '.lang,footer,.top,.item,.kpi div,.meta span,.bar,.hbar,table.stats th,table.stats td{border-color:#fff}'
         . '.lang a{color:#fff;border-color:#fff}'
         . '.lang a[aria-current]{background:#fff;color:#000}'
-        . 'footer a{color:#fff}}';
+        . '.brand,.menu a,main.read a,footer a{color:#fff}'
+        . '.menu a[aria-current]{border-bottom-color:#fff}'
+        . '.bar span,.hbar span{background:#fff}'
+        . '.filters input,.filters select{background:#000;color:#fff;border-color:#fff}'
+        . '.filters button{background:#fff;color:#000;border-color:#fff}}';
+    return $css;
+}
 
+function pc_shell(string $code, string $title, string $inner, string $hier, bool $form = false): array
+{
+    $css = pc_css();
     $t = $code === 'en' ? SW_EN : SW_DE;
 
-    // Der Umschalter bleibt auf der Seite, auf der er gedrueckt wird.
+    // Der Umschalter bleibt auf der Seite, auf der er gedrueckt wird, samt Suche,
+    // Filter und Seitenzahl. Nur bekannte Parameter, und wie am Handy mit Laengendeckel.
+    $behalten = [];
+    foreach (['q', 'category', 'gebiet', 'sort', 'page'] as $key) {
+        if (isset($_GET[$key]) && is_string($_GET[$key]) && $_GET[$key] !== '') {
+            $behalten[$key] = $_GET[$key];
+        }
+    }
+    if (strlen(http_build_query($behalten)) > 150) {
+        $behalten = [];
+    }
     $switch = '';
     foreach (['de' => 'Deutsch', 'en' => 'English'] as $c => $name) {
         if (!lang_valid($c)) {
             continue;
         }
-        $switch .= '<a href="' . e(base_path() . ($hier === '/' ? '/' : $hier) . '?lang=' . rawurlencode($c)) . '"'
+        $switch .= '<a href="' . e(base_path() . ($hier === '/' ? '/' : $hier) . '?' . http_build_query($behalten + ['lang' => $c])) . '"'
             . ' lang="' . e($c) . '" hreflang="' . e($c) . '"'
             . ($c === $code ? ' aria-current="true"' : '')
             . '>' . e($name) . '</a>';
@@ -5129,6 +5268,19 @@ function pc_shell(string $code, string $title, string $inner, string $hier): arr
     // Bei nur einer eingerichteten Sprache gibt es nichts umzuschalten.
     if (substr_count($switch, '<a ') < 2) {
         $switch = '';
+    }
+    $switch = $switch === '' ? '' : '<nav class="lang" aria-label="Sprache">' . $switch . '</nav>';
+
+    // Mit Lese-Ansicht gibt es oben eine Leiste mit Themen und Statistik, sonst nur den Umschalter.
+    if (sw_pc_read()) {
+        $kopf = '<header class="top">'
+            . '<a class="brand" href="' . e(base_path() . '/?lang=' . rawurlencode($code)) . '">' . e((string) SW::$cfg['app_name']) . '</a>'
+            . '<nav class="menu">'
+            . '<a href="' . e(base_path() . '/?lang=' . rawurlencode($code)) . '"' . ($hier === '/' ? ' aria-current="page"' : '') . '>' . e($t['pc.nav_topics']) . '</a>'
+            . '<a href="' . e(base_path() . '/stats?lang=' . rawurlencode($code)) . '"' . ($hier === '/stats' ? ' aria-current="page"' : '') . '>' . e($t['pc.nav_stats']) . '</a>'
+            . '</nav>' . $switch . '</header>';
+    } else {
+        $kopf = $switch;
     }
 
     $fuss = '';
@@ -5146,11 +5298,11 @@ function pc_shell(string $code, string $title, string $inner, string $hier): arr
         . '<title>' . e($title) . ' · ' . e((string) SW::$cfg['app_name']) . '</title>'
         . '<style>' . $css . '</style>'
         . '</head><body>'
-        . ($switch === '' ? '' : '<nav class="lang" aria-label="Sprache">' . $switch . '</nav>')
+        . $kopf
         . $inner
         . '<footer>' . $fuss . '</footer></body></html>';
 
-    return ['css' => $css, 'html' => $html];
+    return ['css' => $css, 'html' => $html, 'form' => $form, 'status' => 200];
 }
 
 function pc_lock_page(): array
@@ -5161,7 +5313,7 @@ function pc_lock_page(): array
         . '<h1>' . e($t['lock.title']) . '</h1>'
         . '<p>' . e($t['lock.body']) . '</p>'
         . '</main>';
-    return pc_shell($code, $t['lock.title'], $inner, '/');
+    return pc_shell($code, $t['lock.title'], $inner, SW::$path);
 }
 
 // Rechtstext als eigenstaendige Seite, aus derselben Liste wie die Handyansicht.
@@ -5185,12 +5337,18 @@ function pc_static_page(string $path): array
 // Strenger als sonst, weil hier weder Skript noch Bild noch Verbindung gebraucht wird.
 function pc_send(array $page): void
 {
-    http_response_code(200);
+    http_response_code((int) ($page['status'] ?? 200));
+    // Nur die Suche der Lese-Ansicht darf ein Formular abschicken, und nur an diese Seite.
     header("Content-Security-Policy: default-src 'none'; style-src 'sha256-"
         . base64_encode(hash('sha256', $page['css'], true)) . "'; "
-        . "base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+        . "base-uri 'none'; frame-ancestors 'none'; form-action " . (empty($page['form']) ? "'none'" : "'self'"));
     header('Content-Type: text/html; charset=utf-8');
-    header('Cache-Control: no-store');
+    if (!empty($page['cache'])) {
+        header('Cache-Control: public, max-age=' . (int) $page['cache']);
+        header('Vary: Accept-Language, User-Agent', false);
+    } else {
+        header('Cache-Control: no-store');
+    }
     echo $page['html'];
     exit;
 }
@@ -5198,6 +5356,307 @@ function pc_send(array $page): void
 function v_pc_lock(): void
 {
     pc_send(pc_lock_page());
+}
+
+// ---- Lese-Ansicht am Rechner: nur GET, keine Sitzung, keine Cookies, kein Skript ----
+
+function pc_read_prepare(): void
+{
+    $code = pc_lang();
+    SW::$lang = $code;
+    SW::$tActive = $code === 'en' ? SW_EN : SW_DE;
+}
+
+function pc_url(string $path, array $params = []): string
+{
+    $params = array_filter($params, static function ($v): bool {
+        return $v !== '' && $v !== null;
+    });
+    $params['lang'] = SW::$lang;
+    return base_path() . $path . '?' . http_build_query($params);
+}
+
+function pc_bar(int $for, int $against): string
+{
+    [$pctFor, $pctAgainst] = vote_pct($for, $against);
+    return '<div class="bar" role="img" aria-label="' . e(t('vote.bar_aria')) . '">'
+        . '<span class="for w-' . $pctFor . '"></span><span class="against w-' . $pctAgainst . '"></span></div>';
+}
+
+function pc_message_page(int $status, string $titleKey, string $textKey): array
+{
+    $inner = '<main><h1>' . e(t($titleKey)) . '</h1><p>' . e(t($textKey)) . '</p></main>';
+    $page = pc_shell(SW::$lang, t($titleKey), $inner, SW::$path);
+    $page['status'] = $status;
+    return $page;
+}
+
+function pc_topics_page(): array
+{
+    $filters = topics_query_filters();
+    $page = query_int('page', 1, 500, 1);
+    $perPage = (int) SW::$cfg['page_size'];
+    $result = topics_list($filters, $page, $perPage, null);
+    $pages = max(1, (int) ceil($result['total'] / $perPage));
+    $keep = ['category' => $filters['category'], 'gebiet' => $filters['gebiet'], 'q' => $filters['q'],
+             'sort' => $filters['sort'] === 'net' ? '' : $filters['sort']];
+    $gefiltert = $filters['q'] !== '' || $filters['category'] !== '' || $filters['gebiet'] !== '' || $filters['sort'] !== 'net';
+
+    $html = '<main class="read"><h1>' . e(t('pc.nav_topics')) . '</h1>'
+        . '<p class="note">' . e(t('pc.read_hint')) . '</p>'
+        . '<form class="filters" role="search" method="get" action="' . e(base_path() . '/') . '">'
+        . '<input type="hidden" name="lang" value="' . e(SW::$lang) . '">'
+        . '<label><span>' . e(t('topics.search')) . '</span><input type="search" name="q" maxlength="80" value="' . e($filters['q']) . '"></label>'
+        . '<label><span>' . e(t('topics.filter_category')) . '</span><select name="category">'
+        . '<option value="">' . e(t('topics.filter_all')) . '</option>';
+    foreach (categories_offer() as $category) {
+        $sel = $filters['category'] === (string) $category['slug'] ? ' selected' : '';
+        $html .= '<option value="' . e((string) $category['slug']) . '"' . $sel . '>' . e(cat_name($category)) . '</option>';
+    }
+    $html .= '</select></label>';
+    if (!sw_bund_only()) {
+        $html .= '<label><span>' . e(t('topic.f_scope')) . '</span>' . scope_picker('gebiet', $filters['gebiet'], true) . '</label>';
+    }
+    $html .= '<label><span>' . e(t('topics.sort')) . '</span><select name="sort">'
+        . '<option value="net"' . ($filters['sort'] === 'net' ? ' selected' : '') . '>' . e(t('topics.sort_net')) . '</option>'
+        . '<option value="new"' . ($filters['sort'] === 'new' ? ' selected' : '') . '>' . e(t('topics.sort_new')) . '</option>'
+        . '<option value="top"' . ($filters['sort'] === 'top' ? ' selected' : '') . '>' . e(t('topics.sort_top')) . '</option>'
+        . '</select></label>'
+        . '<button type="submit">' . e(t('topics.apply')) . '</button>'
+        . ($gefiltert ? '<a href="' . e(pc_url('/')) . '">' . e(t('topics.clear')) . '</a>' : '')
+        . '</form>';
+
+    if ($result['rows'] === []) {
+        $html .= '<p class="note">' . e(t('topics.none')) . '</p>';
+    } else {
+        $html .= '<div class="grid">';
+        foreach ($result['rows'] as $row) {
+            $for = (int) $row['votes_for'];
+            $against = (int) $row['votes_against'];
+            $html .= '<article class="item"><div class="meta"><span>' . e(cat_name($row)) . '</span>'
+                . (sw_bund_only() ? '' : '<span>' . e(scope_text($row)) . '</span>')
+                . ($row['status'] !== 'active' ? '<span>' . e(t('topic.ended')) . '</span>' : '')
+                . '</div>'
+                . '<h2><a href="' . e(pc_url('/topic/' . (int) $row['id'])) . '">' . e((string) $row['title']) . '</a></h2>'
+                . '<p>' . e((string) $row['goal']) . '</p>'
+                . pc_bar($for, $against)
+                . '<div class="nums"><span>' . e(t('vote.for')) . ' ' . e(num($for)) . '</span>'
+                . '<span>' . e(t('vote.against')) . ' ' . e(num($against)) . '</span></div></article>';
+        }
+        $html .= '</div>';
+    }
+    if ($pages > 1) {
+        $html .= '<nav class="pages" aria-label="Pagination">';
+        if ($page > 1) {
+            $html .= '<a href="' . e(pc_url('/', $keep + ['page' => $page - 1])) . '">&laquo; ' . e(t('topics.prev')) . '</a>';
+        }
+        $html .= '<span>' . e(t('topics.page_of', ['p' => $page, 'n' => $pages])) . '</span>';
+        if ($page < $pages) {
+            $html .= '<a href="' . e(pc_url('/', $keep + ['page' => $page + 1])) . '">' . e(t('topics.next')) . ' &raquo;</a>';
+        }
+        $html .= '</nav>';
+    }
+    $html .= '</main>';
+    return pc_shell(SW::$lang, t('pc.nav_topics'), $html, '/', true);
+}
+
+function pc_topic_page(int $id): array
+{
+    $topic = topic_find($id);
+    if ($topic === null) {
+        return pc_message_page(404, 'error.not_found_title', 'error.not_found');
+    }
+    topic_close_if_due($topic);
+    $topic = topic_find($id);
+    if ($topic['status'] === 'removed') {
+        // Wie am Handy: eine normale Seite mit dem Hinweis, kein Fehler.
+        return pc_message_page(200, 'topic.removed_title', 'topic.removed_text');
+    }
+    $archived = $topic['status'] === 'archived';
+    $closed = $topic['status'] !== 'active';
+    $for = (int) $topic['votes_for'];
+    $neutral = (int) $topic['votes_neutral'];
+    $against = (int) $topic['votes_against'];
+    [$pctFor, $pctAgainst] = vote_pct($for, $against);
+
+    $html = '<main class="read detail"><h1>' . e((string) $topic['title']) . '</h1>'
+        . '<div class="meta"><span>' . e(cat_name($topic)) . '</span>'
+        . (sw_bund_only() ? '' : '<span>' . e(scope_text($topic)) . '</span>')
+        . ($archived ? '<span>' . e(t('topic.archived_badge')) . '</span>'
+            : ($closed ? '<span>' . e(t('topic.ended')) . '</span>' : '<span>' . e(topic_end_text($topic)) . '</span>'))
+        . '</div>'
+        . '<p>' . nl2br(e((string) $topic['goal'])) . '</p>'
+        . '<h2>' . e(t('topic.reasoning_label')) . '</h2>'
+        . '<p>' . nl2br(e((string) $topic['reasoning'])) . '</p>'
+        . '<h2>' . e(t('pc.results')) . '</h2>'
+        . pc_bar($for, $against)
+        . '<div class="nums"><span>' . e(t('vote.for')) . ' ' . e(num($for)) . ' (' . $pctFor . ' %)</span>'
+        . '<span>' . e(t('vote.neutral')) . ' ' . e(num($neutral)) . '</span>'
+        . '<span>' . e(t('vote.against')) . ' ' . e(num($against)) . ' (' . $pctAgainst . ' %)</span></div>';
+    if ($archived) {
+        $html .= '<p class="note">' . e(t('topic.archived_note')) . '</p>';
+    } elseif (!$closed) {
+        $html .= '<p class="note">' . e(t('pc.vote_hint')) . '</p>';
+    }
+    $similar = topics_similar((string) $topic['title'], (int) $topic['id'], 4);
+    if ($similar !== []) {
+        $html .= '<h2>' . e(t('topic.similar')) . '</h2><ul>';
+        foreach ($similar as $row) {
+            $html .= '<li><a href="' . e(pc_url('/topic/' . (int) $row['id'])) . '">' . e((string) $row['title']) . '</a></li>';
+        }
+        $html .= '</ul>';
+    }
+    $html .= '</main>';
+    return pc_shell(SW::$lang, (string) $topic['title'], $html, '/topic/' . $id);
+}
+
+function pc_stats_page(): array
+{
+    // Nur sichtbare Themen zaehlen: entfernte und archivierte Themen tauchen nirgends auf,
+    // sonst liesse sich aus der Differenz der Summen auf sie schliessen.
+    $db = SW::$db;
+    $byStatus = ['active' => 0, 'closed' => 0];
+    foreach ($db->all('SELECT status, COUNT(*) AS n FROM topics GROUP BY status') as $row) {
+        $byStatus[(string) $row['status']] = (int) $row['n'];
+    }
+    $byChoice = ['for' => 0, 'neutral' => 0, 'against' => 0];
+    foreach ($db->all("SELECT v.choice, COUNT(*) AS n FROM votes v JOIN topics t ON t.id = v.topic_id
+                        WHERE t.status IN ('active','closed') GROUP BY v.choice") as $row) {
+        if (isset($byChoice[(string) $row['choice']])) {
+            $byChoice[(string) $row['choice']] = (int) $row['n'];
+        }
+    }
+    $votes = array_sum($byChoice);
+    $users = (int) $db->val('SELECT COUNT(*) FROM users WHERE is_system = 0 AND is_seed = 0');
+    $cats = $db->all(
+        "SELECT c.name_de, c.name_en, COUNT(DISTINCT t.id) AS topics, COUNT(v.topic_id) AS votes
+         FROM categories c
+         LEFT JOIN topics t ON t.category_id = c.id AND t.status IN ('active','closed')
+         LEFT JOIN votes v ON v.topic_id = t.id
+         GROUP BY c.id HAVING topics > 0
+         ORDER BY votes DESC, topics DESC, c.sort_order, c.id"
+    );
+    $levels = sw_bund_only() ? [] : $db->all(
+        "SELECT scope_level, COUNT(*) AS n FROM topics WHERE status IN ('active','closed') GROUP BY scope_level ORDER BY n DESC"
+    );
+    $top = $db->all(
+        "SELECT t.id, t.title, COUNT(v.topic_id) AS n
+         FROM topics t LEFT JOIN votes v ON v.topic_id = t.id
+         WHERE t.status IN ('active','closed')
+         GROUP BY t.id HAVING n > 0
+         ORDER BY n DESC, t.created_at DESC LIMIT 10"
+    );
+    $erster = Clock::now()->setTimezone(new DateTimeZone('UTC'))->modify('first day of this month 00:00:00')->modify('-11 months');
+    $months = [];
+    for ($i = 0; $i < 12; $i++) {
+        $months[$erster->modify('+' . $i . ' months')->format('Y-m')] = 0;
+    }
+    $topicsMonth = $months;
+    $votesMonth = $months;
+    $seit = $erster->format('Y-m-d H:i:s');
+    foreach ($db->all("SELECT substr(created_at, 1, 7) AS m, COUNT(*) AS n FROM topics
+                        WHERE status IN ('active','closed') AND created_at >= ? GROUP BY m", [$seit]) as $row) {
+        if (isset($topicsMonth[(string) $row['m']])) {
+            $topicsMonth[(string) $row['m']] = (int) $row['n'];
+        }
+    }
+    foreach ($db->all("SELECT substr(v.created_at, 1, 7) AS m, COUNT(*) AS n FROM votes v JOIN topics t ON t.id = v.topic_id
+                        WHERE t.status IN ('active','closed') AND v.created_at >= ? GROUP BY m", [$seit]) as $row) {
+        if (isset($votesMonth[(string) $row['m']])) {
+            $votesMonth[(string) $row['m']] = (int) $row['n'];
+        }
+    }
+
+    $hbar = static function (int $n, int $max): string {
+        $pct = $max > 0 ? (int) round($n * 100 / $max) : 0;
+        return '<td class="w" aria-hidden="true"><div class="hbar"><span class="w-' . $pct . '"></span></div></td>';
+    };
+    $levelName = static function (string $level): string {
+        $keys = ['bund' => 'scope.bund', 'bundesland' => 'scope.bundesland', 'landkreis' => 'scope.landkreis'];
+        return isset($keys[$level]) ? t($keys[$level]) : $level;
+    };
+
+    $html = '<main class="read"><h1>' . e(t('stats.h')) . '</h1>'
+        . '<p class="note">' . e(t('stats.as_of', ['time' => Clock::displayLocal(Clock::nowStr(), t('common.date_format') . ' H:i')])) . '</p>'
+        . '<div class="kpi">'
+        . '<div><b>' . e(num($byStatus['active'])) . '</b><span>' . e(t('stats.topics_active')) . '</span></div>'
+        . '<div><b>' . e(num($byStatus['closed'])) . '</b><span>' . e(t('stats.topics_closed')) . '</span></div>'
+        . '<div><b>' . e(num($votes)) . '</b><span>' . e(t('stats.votes')) . '</span></div>'
+        . '<div><b>' . e(num($users)) . '</b><span>' . e(t('stats.users')) . '</span></div>'
+        . '</div>';
+
+    $html .= '<h2>' . e(t('stats.by_choice')) . '</h2>';
+    if ($votes === 0) {
+        $html .= '<p class="note">' . e(t('stats.none')) . '</p>';
+    } else {
+        $html .= '<table class="stats"><thead><tr><th>' . e(t('stats.col_answer')) . '</th><th>' . e(t('stats.col_votes')) . '</th>'
+            . '<th>' . e(t('stats.col_share')) . '</th><th></th></tr></thead><tbody>';
+        foreach (['for' => t('vote.for'), 'neutral' => t('vote.neutral'), 'against' => t('vote.against')] as $choice => $label) {
+            $n = $byChoice[$choice];
+            $html .= '<tr><th scope="row">' . e($label) . '</th><td class="n">' . e(num($n)) . '</td>'
+                . '<td class="n">' . (int) round($n * 100 / $votes) . ' %</td>' . $hbar($n, $votes) . '</tr>';
+        }
+        $html .= '</tbody></table>';
+    }
+
+    $html .= '<h2>' . e(t('stats.by_category')) . '</h2>';
+    if ($cats === []) {
+        $html .= '<p class="note">' . e(t('stats.none')) . '</p>';
+    } else {
+        $maxVotes = 0;
+        foreach ($cats as $row) {
+            $maxVotes = max($maxVotes, (int) $row['votes']);
+        }
+        $html .= '<table class="stats"><thead><tr><th>' . e(t('stats.col_category')) . '</th><th>' . e(t('stats.col_topics')) . '</th>'
+            . '<th>' . e(t('stats.col_votes')) . '</th><th>' . e(t('stats.col_share')) . '</th></tr></thead><tbody>';
+        foreach ($cats as $row) {
+            $html .= '<tr><td>' . e(cat_name($row)) . '</td><td class="n">' . e(num((int) $row['topics'])) . '</td>'
+                . '<td class="n">' . e(num((int) $row['votes'])) . '</td>' . $hbar((int) $row['votes'], $maxVotes) . '</tr>';
+        }
+        $html .= '</tbody></table>';
+    }
+
+    if (!sw_bund_only()) {
+        $html .= '<h2>' . e(t('stats.by_level')) . '</h2>';
+        if ($levels === []) {
+            $html .= '<p class="note">' . e(t('stats.none')) . '</p>';
+        } else {
+            $html .= '<table class="stats"><thead><tr><th>' . e(t('stats.col_level')) . '</th>'
+                . '<th>' . e(t('stats.col_topics')) . '</th></tr></thead><tbody>';
+            foreach ($levels as $row) {
+                $html .= '<tr><td>' . e($levelName((string) $row['scope_level'])) . '</td><td class="n">' . e(num((int) $row['n'])) . '</td></tr>';
+            }
+            $html .= '</tbody></table>';
+        }
+    }
+
+    $html .= '<h2>' . e(t('stats.top')) . '</h2>';
+    if ($top === []) {
+        $html .= '<p class="note">' . e(t('stats.none')) . '</p>';
+    } else {
+        $html .= '<table class="stats"><thead><tr><th>' . e(t('pc.nav_topics')) . '</th><th>' . e(t('stats.col_votes')) . '</th><th></th></tr></thead><tbody>';
+        foreach ($top as $row) {
+            $html .= '<tr><td><a href="' . e(pc_url('/topic/' . (int) $row['id'])) . '">' . e((string) $row['title']) . '</a></td>'
+                . '<td class="n">' . e(num((int) $row['n'])) . '</td>' . $hbar((int) $row['n'], (int) $top[0]['n']) . '</tr>';
+        }
+        $html .= '</tbody></table>';
+    }
+
+    foreach ([['stats.topics_month', $topicsMonth, 'stats.col_topics'], ['stats.votes_month', $votesMonth, 'stats.col_votes']] as [$titleKey, $reihe, $colKey]) {
+        $html .= '<h2>' . e(t($titleKey)) . '</h2><table class="stats"><thead><tr><th>' . e(t('stats.col_month')) . '</th>'
+            . '<th>' . e(t($colKey)) . '</th><th></th></tr></thead><tbody>';
+        $max = max($reihe);
+        foreach ($reihe as $monat => $n) {
+            $html .= '<tr><td>' . e($monat) . '</td><td class="n">' . e(num($n)) . '</td>' . $hbar($n, $max) . '</tr>';
+        }
+        $html .= '</tbody></table>';
+    }
+    $html .= '</main>';
+    $page = pc_shell(SW::$lang, t('stats.h'), $html, '/stats');
+    // Die Statistik ist fuer alle gleich und darf kurz zwischengespeichert werden, das
+    // begrenzt die Rechenarbeit bei vielen Aufrufen. Sprache und Geraet bleiben getrennt.
+    $page['cache'] = 60;
+    return $page;
 }
 
 function v_error_404(): void
@@ -5834,9 +6293,28 @@ function web_main(): void
 
     // Vor der Sitzung: ein gesperrter Besucher bekommt keine Kennung und keinen Eintrag.
     // Die Rechtstexte bleiben erreichbar, aber ebenfalls als eigenstaendige Seite.
+    // Die Lese-Ansicht liefert Themen und Statistik genauso: nur GET, ohne Sitzung und Cookies.
     if (sw_pc_locked() && sw_is_desktop()) {
         if (isset(SW_STATIC_PAGES[$path])) {
             pc_send(pc_static_page($path));
+        }
+        if (sw_pc_read() && ($method0 === 'GET' || $method0 === 'HEAD')) {
+            pc_read_prepare();
+            try {
+                maintenance_tick_throttled();
+                if ($path === '/') {
+                    pc_send(pc_topics_page());
+                }
+                if ($path === '/stats') {
+                    pc_send(pc_stats_page());
+                }
+                if (preg_match('#^/topic/(\d{1,10})$#', $path, $mLese) === 1) {
+                    pc_send(pc_topic_page((int) $mLese[1]));
+                }
+            } catch (Throwable $e) {
+                log_line('ERROR', 'unhandled', ['type' => get_class($e), 'msg' => $e->getMessage(), 'path' => $path]);
+                pc_send(pc_message_page(500, 'error.generic_title', 'error.generic'));
+            }
         }
         if (!sw_lock_exempt($path)) {
             v_pc_lock();
@@ -6810,7 +7288,7 @@ function cli_selftest(): int
     })($seiteDe['css']));
     $check('Sprachumschalter steht oben und zeigt die aktive Sprache',
         substr_count($seiteDe['html'], 'class="lang"') === 1
-        && substr_count($seiteDe['html'], '<a ') === 5
+        && substr_count($seiteDe['html'], '<a ') === (sw_pc_read() ? 8 : 5)
         && strpos($seiteDe['html'], 'lang=de" lang="de" hreflang="de" aria-current="true"') !== false
         && strpos($seiteEn['html'], 'lang=en" lang="en" hreflang="en" aria-current="true"') !== false);
     $check('Jede Sprache zeigt ihren eigenen Text',
@@ -6862,6 +7340,123 @@ function cli_selftest(): int
     $check('Rechtstexte stehen nur an einer Stelle',
         count(SW_STATIC_PAGES) === 3
         && isset(SW_STATIC_PAGES['/about'], SW_STATIC_PAGES['/imprint'], SW_STATIC_PAGES['/privacy']));
+
+    echo "== Lese-Ansicht am Rechner ==\n";
+    $check('Lese-Ansicht haengt am eigenen Schalter',
+        array_key_exists('pc_read', SW_CONFIG) && sw_pc_read());
+    $langVorher = [SW::$lang, SW::$tActive];
+    $getVorher = $_GET;
+    $leseAutor = cli_add_users(1, 'pc')[0];
+    $leseCat = (int) categories()[0]['id'];
+    $leseTopic = topic_create($leseAutor, 'Lesethema am Rechner', 'Ziel des Lesethemas hier.', 'Begründung des Lesethemas hier.',
+        $leseCat, 'bund', null, 'date', substr(Clock::addDaysStr(Clock::nowStr(), 30), 0, 10), null);
+    vote_cast(cli_add_users(1, 'pv')[0], $leseTopic, 'for');
+    $_GET = ['lang' => 'de'];
+    pc_read_prepare();
+    $liste = pc_topics_page();
+    $check('Themenliste am Rechner zeigt das Thema, aber keine Eingriffe',
+        strpos($liste['html'], 'Lesethema am Rechner') !== false
+        && strpos($liste['html'], e(pc_url('/topic/' . $leseTopic))) !== false
+        && strpos($liste['html'], 'method="post"') === false
+        && strpos($liste['html'], '<script') === false
+        && strpos($liste['html'], '/auth') === false
+        && strpos($liste['html'], 'http://') === false
+        && !empty($liste['form'])
+        && $liste['css'] === $seiteDe['css']);
+    $check('Lese-Ansicht kommt ohne Inline-Stil aus',
+        strpos($liste['html'], ' style=') === false
+        && strpos($liste['html'], '<h1>' . e(SW_DE['pc.nav_topics']) . '</h1>') !== false
+        && strpos($liste['html'], 'role="search"') !== false);
+    $_GET = ['lang' => 'de', 'q' => 'Lesethema'];
+    $suche = pc_topics_page();
+    $_GET = ['lang' => 'de', 'q' => 'gibtesnichtxyz'];
+    $leer = pc_topics_page();
+    $check('Suche am Rechner filtert',
+        strpos($suche['html'], 'Lesethema am Rechner') !== false
+        && strpos($leer['html'], 'Lesethema am Rechner') === false
+        && strpos($leer['html'], e(SW_DE['topics.none'])) !== false
+        && strpos($leer['html'], e(SW_DE['topics.clear'])) !== false);
+    $_GET = ['lang' => 'en'];
+    pc_read_prepare();
+    $einzel = pc_topic_page($leseTopic);
+    $check('Thema am Rechner zeigt Ergebnis und Handy-Hinweis statt Knoepfen',
+        strpos($einzel['html'], 'Lesethema am Rechner') !== false
+        && strpos($einzel['html'], e(SW_EN['pc.vote_hint'])) !== false
+        && strpos($einzel['html'], e(SW_EN['vote.for']) . ' 1 (100 %)') !== false
+        && strpos($einzel['html'], '<button') === false
+        && strpos($einzel['html'], 'method="post"') === false
+        && strpos($einzel['html'], '<html lang="en"') !== false
+        && strpos($einzel['html'], '/topic/' . $leseTopic . '?lang=de') !== false
+        && empty($einzel['form']));
+    $fehlt = pc_topic_page(999999999);
+    $check('Unbekanntes Thema am Rechner ist eine eigene 404-Seite',
+        $fehlt['status'] === 404 && strpos($fehlt['html'], e(SW_EN['error.not_found_title'])) !== false);
+    $pfadVorher = SW::$path;
+    SW::$path = '/auth';
+    $sperre = pc_lock_page();
+    $hinweis = pc_message_page(404, 'error.not_found_title', 'error.not_found');
+    SW::$path = $pfadVorher;
+    $check('Sperr- und Hinweisseite heben "Themen" nicht hervor und fuehren zurueck',
+        strpos($sperre['html'], 'aria-current="page"') === false
+        && strpos($sperre['html'], '/auth?lang=en') !== false
+        && strpos($sperre['html'], e(SW_EN['footer.home'])) !== false
+        && strpos($hinweis['html'], 'aria-current="page"') === false
+        && strpos($hinweis['html'], e(SW_EN['footer.home'])) !== false);
+    SW::$db->run("UPDATE topics SET status = 'removed' WHERE id = ?", [$leseTopic]);
+    $weg = pc_topic_page($leseTopic);
+    SW::$db->run("UPDATE topics SET status = 'active' WHERE id = ?", [$leseTopic]);
+    $check('Entferntes Thema am Rechner ist wie am Handy eine normale Hinweisseite',
+        $weg['status'] === 200 && strpos($weg['html'], e(SW_EN['topic.removed_title'])) !== false);
+    $_GET = ['lang' => 'de'];
+    pc_read_prepare();
+    $stat = pc_stats_page();
+    $check('Statistik am Rechner zaehlt Themen und Stimmen',
+        strpos($stat['html'], e(SW_DE['stats.h'])) !== false
+        && strpos($stat['html'], 'Lesethema am Rechner') !== false
+        && strpos($stat['html'], '<b>' . num(site_stats()['topics']) . '</b>') !== false
+        && strpos($stat['html'], '<b>' . num(site_stats()['votes']) . '</b>') !== false
+        && strpos($stat['html'], 'method="post"') === false
+        && strpos($stat['html'], '<script') === false
+        && substr_count($stat['html'], '<table') === (sw_bund_only() ? 5 : 6)
+        && strpos($stat['html'], '<b>' . num((int) SW::$db->val('SELECT COUNT(*) FROM users WHERE is_system = 0 AND is_seed = 0')) . '</b>') !== false
+        && $stat['css'] === $seiteDe['css']);
+    $entfernt = topic_create(cli_add_users(1, 'pr')[0], 'Entferntes Lesethema', 'Ziel des entfernten Themas hier.', 'Begründung des entfernten Themas hier.',
+        $leseCat, 'bund', null, 'date', substr(Clock::addDaysStr(Clock::nowStr(), 30), 0, 10), null);
+    vote_cast(cli_add_users(1, 'pw')[0], $entfernt, 'against');
+    SW::$db->run("UPDATE topics SET status = 'removed' WHERE id = ?", [$entfernt]);
+    $statOhne = pc_stats_page();
+    $check('Statistik laesst entfernte Themen und deren Stimmen ueberall weg',
+        strpos($statOhne['html'], 'Entferntes Lesethema') === false
+        && substr_count($statOhne['html'], '<b>' . num(site_stats()['votes'] - 1) . '</b>') >= 1
+        && strpos($statOhne['html'], '<td class="n">' . num(site_stats()['votes'] - 1) . '</td>') !== false
+        && strpos($statOhne['html'], e(SW_DE['vote.against']) . '</th><td class="n">0</td>') !== false);
+    $_GET = ['lang' => 'de', 'q' => 'Lesethema', 'sort' => 'new', 'page' => '1'];
+    $mitFilter = pc_topics_page();
+    $check('Sprachumschalter behaelt Suche, Sortierung und Seite',
+        strpos($mitFilter['html'], 'href="/?q=Lesethema&amp;sort=new&amp;page=1&amp;lang=en"') !== false
+        && strpos($mitFilter['html'], 'href="/?q=Lesethema&amp;sort=new&amp;page=1&amp;lang=de"') !== false);
+    $_GET = ['lang' => 'de', 'q' => str_repeat('x', 160)];
+    $langeSuche = pc_topics_page();
+    $check('Ueberlanger Filter faellt im Umschalter weg',
+        strpos($langeSuche['html'], 'href="/?lang=en"') !== false);
+    $_GET = ['lang' => 'de'];
+    $check('Statistik traegt Tabellenkoepfe und laesst Balken nicht vorlesen',
+        substr_count($stat['html'], '<thead>') === substr_count($stat['html'], '<table')
+        && strpos($stat['html'], '<th scope="row">') !== false
+        && strpos($stat['html'], '<td class="w" aria-hidden="true">') !== false
+        && $stat['cache'] === 60);
+    $check('Statistik nennt keine Kennungen',
+        strpos($stat['html'], 'pseudonym') === false
+        && preg_match('/[0-9a-f]{32,}/', $stat['html']) !== 1);
+    $check('Statistik gibt es nur in der Lese-Ansicht am Rechner', (static function (): bool {
+        $src = file_get_contents(__FILE__);
+        $wm = substr($src, strpos($src, 'function web_main('));
+        $wm = substr($wm, 0, (int) strpos($wm, "\nfunction ", 20));
+        $stats = strpos($wm, "'/stats'");
+        return $stats !== false && substr_count($wm, "'/stats'") === 1 && $stats < strpos($wm, 'session_boot();');
+    })());
+    $_GET = $getVorher;
+    [SW::$lang, SW::$tActive] = $langVorher;
     $check('Listen liegen im Ordner der Anwendung',
         sw_list_path(SW_REGIONS_FILE) === __DIR__ . '/regions.json'
         && sw_list_path(SW_CATEGORIES_FILE) === __DIR__ . '/categories.json');
