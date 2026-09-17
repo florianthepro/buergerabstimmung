@@ -5546,24 +5546,28 @@ function pc_stats_page(): array
          GROUP BY t.id HAVING n > 0
          ORDER BY n DESC, t.created_at DESC LIMIT 10"
     );
-    $erster = Clock::now()->setTimezone(new DateTimeZone('UTC'))->modify('first day of this month 00:00:00')->modify('-11 months');
+    // Monate in Ortszeit, wie alle anderen Datumsregeln der Anwendung: Themen ueber
+    // ihr Ortsdatum, Stimmen je Zeile umgerechnet (die Datenbank kennt keine Zeitzonen).
+    $tz = new DateTimeZone((string) SW::$cfg['timezone']);
+    $erster = (new DateTimeImmutable(Clock::localDate() . ' 00:00:00', $tz))->modify('first day of this month')->modify('-11 months');
     $months = [];
     for ($i = 0; $i < 12; $i++) {
         $months[$erster->modify('+' . $i . ' months')->format('Y-m')] = 0;
     }
     $topicsMonth = $months;
     $votesMonth = $months;
-    $seit = $erster->format('Y-m-d H:i:s');
-    foreach ($db->all("SELECT substr(created_at, 1, 7) AS m, COUNT(*) AS n FROM topics
-                        WHERE status IN ('active','closed') AND created_at >= ? GROUP BY m", [$seit]) as $row) {
+    foreach ($db->all("SELECT substr(created_date, 1, 7) AS m, COUNT(*) AS n FROM topics
+                        WHERE status IN ('active','closed') AND created_date >= ? GROUP BY m", [$erster->format('Y-m-d')]) as $row) {
         if (isset($topicsMonth[(string) $row['m']])) {
             $topicsMonth[(string) $row['m']] = (int) $row['n'];
         }
     }
-    foreach ($db->all("SELECT substr(v.created_at, 1, 7) AS m, COUNT(*) AS n FROM votes v JOIN topics t ON t.id = v.topic_id
-                        WHERE t.status IN ('active','closed') AND v.created_at >= ? GROUP BY m", [$seit]) as $row) {
-        if (isset($votesMonth[(string) $row['m']])) {
-            $votesMonth[(string) $row['m']] = (int) $row['n'];
+    $seitUtc = $erster->setTimezone(new DateTimeZone('UTC'))->format(Clock::FORMAT);
+    foreach ($db->all("SELECT v.created_at FROM votes v JOIN topics t ON t.id = v.topic_id
+                        WHERE t.status IN ('active','closed') AND v.created_at >= ?", [$seitUtc]) as $row) {
+        $m = Clock::displayLocal((string) $row['created_at'], 'Y-m');
+        if (isset($votesMonth[$m])) {
+            $votesMonth[$m]++;
         }
     }
 
@@ -7445,6 +7449,17 @@ function cli_selftest(): int
         && strpos($stat['html'], '<th scope="row">') !== false
         && strpos($stat['html'], '<td class="w" aria-hidden="true">') !== false
         && $stat['cache'] === 60);
+    $monatsZeile = static function (string $html, string $monat): int {
+        $teil = substr($html, (int) strpos($html, e(SW_DE['stats.votes_month'])));
+        return preg_match('#<td>' . preg_quote($monat, '#') . '</td><td class="n">(\d+)</td>#', $teil, $mm) === 1 ? (int) $mm[1] : -1;
+    };
+    $vorher = $monatsZeile(pc_stats_page()['html'], '2026-03');
+    // 28.02. 23:30 UTC ist in Berlin schon der 1. Maerz: die Stimme gehoert in den Maerz.
+    SW::$db->run('INSERT INTO votes (topic_id, voter_tag, choice, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+        [$leseTopic, 'ortszeit-test', 'for', '2026-02-28 23:30:00', '2026-02-28 23:30:00']);
+    $nachher = $monatsZeile(pc_stats_page()['html'], '2026-03');
+    SW::$db->run("DELETE FROM votes WHERE voter_tag = 'ortszeit-test'");
+    $check('Monatsreihen der Statistik rechnen in Ortszeit', $vorher >= 0 && $nachher === $vorher + 1);
     $check('Statistik nennt keine Kennungen',
         strpos($stat['html'], 'pseudonym') === false
         && preg_match('/[0-9a-f]{32,}/', $stat['html']) !== 1);
